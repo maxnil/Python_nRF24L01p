@@ -7,14 +7,15 @@ import sys
 class IoCtrl:
     def __init__(self, spi_ss_pin, a_pin=None, b_pin=None):
         if sys.implementation.name == 'cpython':
-            print("We are running on CPython")
             try:
                 from spidev import SpiDev
                 import RPi.GPIO as GPIO
-                print("Successfully imported 'spidev', so we most likely running on a Raspberry Pi")
                 self.spi_type = 'spidev'
+                print("SPI type:", self.spi_type)
                 self._spi = SpiDev()
                 self._spi.open(0, 0)
+                self._spi.max_speed_hz = 10000000
+                self._spi.mode = 0b00
                 self._gpio = GPIO
                 self._gpio.setmode(GPIO.BOARD)
                 if a_pin is not None:
@@ -24,19 +25,18 @@ class IoCtrl:
                 self._a_pin = a_pin
                 self._b_pin = b_pin
             except ModuleNotFoundError:
-                print("Did not manage to import 'spidev', so we are most likely not running on a Raspberry Pi")
                 try:
                     from spidriver import SPIDriver
-                    print("Successfully imported 'SPIDriver', so we are most likely running on the Mac")
                     self.spi_type = 'spidriver'
+                    print("SPI type:", self.spi_type)
                     self._spi = SPIDriver("/dev/tty.usbserial-DO01HFG1")
                     self._spi.unsel()
                 except ModuleNotFoundError:
                     raise Exception("No SPI module found")
         elif sys.implementation.name == 'micropython':
-            print("We are running on MicroPython")
             from machine import Pin, SPI
             self.spi_type = 'micropython'
+            print("SPI type:", self.spi_type)
             self._spi = SPI(1)
             self._spi_ss_pin = Pin(spi_ss_pin, Pin.OUT)
             if a_pin is not None:
