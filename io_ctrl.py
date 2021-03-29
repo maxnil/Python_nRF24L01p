@@ -49,6 +49,10 @@ class IoCtrl:
 
         print("SPI type:", self.spi_type)
 
+    def __del__(self):
+        if self.spi_type == 'spidev':
+            self._gpio.cleanup()
+
     def spi_transfer(self, data):
         if self.spi_type == 'spidriver':
             self._spi.sel()
