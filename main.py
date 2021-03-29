@@ -21,8 +21,8 @@ def print_fifo_status(nrf23):
 
 
 def main():
-    payload_size = 32
-    rf_ch = 127
+    payload_size = 16
+    rf_ch = 64
 
     io_ctrl = IoCtrl(a_pin=25)
     nrf24 = NRF24L01P(io_ctrl.spi_transfer, io_ctrl.a_pin)
@@ -38,11 +38,26 @@ def prx_mode(nrf24, rf_ch, payload_size):
 
     nrf24.setup(prim_rx=1, rf_ch=rf_ch, payload_size=payload_size)
 
+    # Enable aouto acknowledgement data pipe 0
+    response = nrf24.read_reg(NRF24L01P.EN_AA, 1)
+    en_ea = response[1] & NRF24L01P.ENAA_P0
+    nrf24.write_reg(NRF24L01P.EN_AA, bytes([en_ea]))
+
+    # Enable data pipe 0
+    response = nrf24.read_reg(NRF24L01P.EN_RXADDR, 1)
+    en_rxaddr = response[1] & NRF24L01P.ERX_P0
+    nrf24.write_reg(NRF24L01P.EN_RXADDR, bytes([en_rxaddr]))
+
     nrf24.power_up()  # Enter 'Standby-1'
+    nrf24.trx_enable()
 
     ic(nrf24.status())
+    ic(nrf24.read_reg(NRF24L01P.CONFIG, 1))
 
-    print_fifo_status(nrf24)
+    for i in range(5):
+        print_fifo_status(nrf24)
+        ic(nrf24.read_reg(NRF24L01P.RX_PW_P0, 1))
+        time.sleep(1)
 
 
 def ptx_mode(nrf24, rf_ch, payload_size):
