@@ -5,13 +5,12 @@ import sys
 
 
 class IoCtrl:
-    def __init__(self, spi_ss_pin, a_pin=None, b_pin=None):
+    def __init__(self, spi_ss_pin=None, a_pin=None, b_pin=None):
         if sys.implementation.name == 'cpython':
             try:
                 from spidev import SpiDev
                 import RPi.GPIO as GPIO
                 self.spi_type = 'spidev'
-                print("SPI type:", self.spi_type)
                 self._spi = SpiDev()
                 self._spi.open(0, 0)
                 self._spi.max_speed_hz = 10000000
@@ -28,16 +27,18 @@ class IoCtrl:
                 try:
                     from spidriver import SPIDriver
                     self.spi_type = 'spidriver'
-                    print("SPI type:", self.spi_type)
                     self._spi = SPIDriver("/dev/tty.usbserial-DO01HFG1")
                     self._spi.unsel()
+                    self._spi.seta(0)
+                    self._spi.setb(0)
+                    self._a_pin = a_pin
+                    self._b_pin = b_pin
                 except ModuleNotFoundError:
                     raise Exception("No SPI module found")
         elif sys.implementation.name == 'micropython':
             from machine import Pin, SPI
             self.spi_type = 'micropython'
-            print("SPI type:", self.spi_type)
-            self._spi = SPI(1)
+            self._spi = SPI(1, baudrate=10000000)
             self._spi_ss_pin = Pin(spi_ss_pin, Pin.OUT)
             if a_pin is not None:
                 self._a_pin = Pin(a_pin, Pin.OUT)
@@ -46,17 +47,21 @@ class IoCtrl:
         else:
             raise Exception(f"Unknown implementation: '{sys.implementation.name}'")
 
+        print("SPI type:", self.spi_type)
+
     def spi_transfer(self, data):
         if self.spi_type == 'spidriver':
             self._spi.sel()
             response = self._spi.writeread(data)
             self._spi.unsel()
-            return response
+            return bytes(response)
         elif self.spi_type == 'spidev':
             response = self._spi.xfer(data)
-            return response
+            return bytes(response)
         else:  # Assume MicroPython
-            return data
+            response = data
+            self._spi.write_readinto(data, response)
+            return bytes(response)
 
     def a_pin(self, val):
         if self._a_pin is None:
