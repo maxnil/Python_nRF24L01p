@@ -16,7 +16,7 @@ class IoCtrl:
                 self._spi.max_speed_hz = 10000000
                 self._spi.mode = 0b00
                 self._gpio = GPIO
-                self._gpio.setmode(GPIO.BOARD)
+                self._gpio.setmode(GPIO.BCM)
                 if a_pin is not None:
                     self._gpio.setup(a_pin, GPIO.OUT)
                 if b_pin is not None:
