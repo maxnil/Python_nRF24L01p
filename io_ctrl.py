@@ -50,16 +50,19 @@ class IoCtrl:
         print("SPI type:", self.spi_type)
 
     def __del__(self):
-        if self.spi_type == 'spidev':
+        if self.spi_type in 'spidriver':
+            self._spi.seta(0)
+            self._spi.setb(0)
+        elif self.spi_type == 'spidev':
             self._gpio.cleanup()
 
     def spi_transfer(self, data):
-        if self.spi_type == 'spidriver':
+        if self.spi_type in 'spidriver':
             self._spi.sel()
             response = self._spi.writeread(data)
             self._spi.unsel()
             return bytes(response)
-        elif self.spi_type == 'spidev':
+        elif self.spi_type in 'spidev':
             response = self._spi.xfer(data)
             return bytes(response)
         else:  # Assume MicroPython
@@ -70,9 +73,9 @@ class IoCtrl:
     def a_pin(self, val):
         if self._a_pin is None:
             raise Exception("a_pin not configured")
-        if self.spi_type == 'spidriver':
+        if self.spi_type in 'spidriver':
             self._spi.seta(val)
-        elif self.spi_type == 'spidev':
+        elif self.spi_type in 'spidev':
             self._gpio.output(self._a_pin, val)
         else:  # Assume MicroPython
             self._a_pin.value(val)

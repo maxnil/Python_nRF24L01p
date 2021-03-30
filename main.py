@@ -28,9 +28,9 @@ def main():
     nrf24 = NRF24L01P(io_ctrl.spi_transfer, io_ctrl.a_pin)
 
     if sys.platform in 'darwin':  # MacBook Pro
-        ptx_mode(nrf24, rf_ch, payload_size)
-    else:  # Rasberry Pi or MicroPython
         prx_mode(nrf24, rf_ch, payload_size)
+    else:  # Raspberry Pi or MicroPython
+        ptx_mode(nrf24, rf_ch, payload_size)
 
 
 def prx_mode(nrf24, rf_ch, payload_size):
@@ -38,7 +38,7 @@ def prx_mode(nrf24, rf_ch, payload_size):
 
     nrf24.setup(prim_rx=1, rf_ch=rf_ch, payload_size=payload_size)
 
-    # Enable aouto acknowledgement data pipe 0
+    # Enable auto acknowledgement data pipe 0
     response = nrf24.read_reg(NRF24L01P.EN_AA, 1)
     en_ea = response[1] & NRF24L01P.ENAA_P0
     nrf24.write_reg(NRF24L01P.EN_AA, bytes([en_ea]))
@@ -54,7 +54,7 @@ def prx_mode(nrf24, rf_ch, payload_size):
     ic(nrf24.status())
     ic(nrf24.read_reg(NRF24L01P.CONFIG, 1))
 
-    for i in range(5):
+    for i in range(10):
         print_fifo_status(nrf24)
         ic(nrf24.read_reg(NRF24L01P.RX_PW_P0, 1))
         time.sleep(1)
@@ -63,11 +63,11 @@ def prx_mode(nrf24, rf_ch, payload_size):
 def ptx_mode(nrf24, rf_ch, payload_size):
     print("Transmitter mode")
 
-    nrf24.setup(prim_rx=0, rf_ch=rf_ch, payload_size=payload_size)
+    nrf24.setup(prim_rx=0, rf_ch=rf_ch, payload_size=payload_size, arc=15)
 
-    # Disable auto acknowledgement on pipe 0
+    # Enable auto acknowledgement on pipe 0
     response = nrf24.read_reg(NRF24L01P.EN_AA, 1)
-    en_ea = response[1] & ~NRF24L01P.ENAA_P0
+    en_ea = response[1] | NRF24L01P.ENAA_P0
     nrf24.write_reg(NRF24L01P.EN_AA, bytes([en_ea]))
 
     nrf24.power_up()  # Enter 'Standby-1'
@@ -77,18 +77,18 @@ def ptx_mode(nrf24, rf_ch, payload_size):
     print_fifo_status(nrf24)
 
     print("Write 32 byte #1")
-    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD_NO_ACK, b'Hello World!')
+    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD, b'Hello World!  1 ')
     print_fifo_status(nrf24)
-    print("Write 32 byte #2")
-    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD_NO_ACK, b'12345678901234567890123456789012')
-    print_fifo_status(nrf24)
-    print("Write 32 byte #3")
-    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD_NO_ACK, b'abcdefghijklmnopqrstuvwxyz')
-    print_fifo_status(nrf24)
+#    print("Write 32 byte #2")
+#    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD_NO_ACK, b'12345678901234567890123456789012')
+#    print_fifo_status(nrf24)
+#    print("Write 32 byte #3")
+#    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD_NO_ACK, b'abcdefghijklmnopqrstuvwxyz')
+#    print_fifo_status(nrf24)
 
     ic(nrf24.observe_tx())
 
-    nrf24.trx_enable(True)  # Enter 'Standby-II'
+    nrf24.trx_enable()  # Enter 'Standby-II'
     time.sleep(1)
     print_fifo_status(nrf24)
     ic(nrf24.observe_tx())
