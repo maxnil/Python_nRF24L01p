@@ -70,6 +70,8 @@ def prx_mode(nrf24, rf_ch):
     ic(nrf24.retransmit_count())
     print_fifo_status(nrf24)
 
+    nrf24.trx_enable()
+    
     while True:
         status, fifo_status = nrf24.read_reg(NRF24L01P.FIFO_STATUS, 1)
 
