@@ -269,5 +269,5 @@ class NRF24L01P:
         if rx_p_no == 0x7:
             rx_data = None
         else:
-            status, rx_data = self.read_cmd(NRF24L01P.R_RX_PAYLOAD, rx_pl_wid)
+            status, rx_data = self.read_cmd(NRF24L01P.R_RX_PAYLOAD, rx_pl_wid[0])
         return rx_data, rx_p_no
