@@ -6,122 +6,120 @@ import time
 
 
 def print_fifo_status(nrf23):
-    response = nrf23.read_reg(NRF24L01P.FIFO_STATUS, 1)[1]
+    status, response = nrf23.read_reg(NRF24L01P.FIFO_STATUS, 1)
     print("FIFO_STATUS:")
-    if response & 1 << 6:
+    if response[0] & 1 << 6:
         print(" TX_REUSE")
-    if response & 1 << 5:
+    if response[0] & 1 << 5:
         print(" TX_FULL")
-    if response & 1 << 4:
+    if response[0] & 1 << 4:
         print(" TX_EMPTY")
-    if response & 1 << 1:
+    if response[0] & 1 << 1:
         print(" RX_FULL")
-    if response & 1 << 0:
+    if response[0] & 1 << 0:
         print(" RX_EMPTY")
 
 
-def main():
-    payload_size = 16
-    rf_ch = 64
+def main(trx_mode='x'):
+    rf_ch = 95
 
     io_ctrl = IoCtrl(a_pin=25)
     nrf24 = NRF24L01P(io_ctrl.spi_transfer, io_ctrl.a_pin)
 
-    if sys.platform in 'darwin':  # MacBook Pro
-        ptx_mode(nrf24, rf_ch, payload_size)
+#    while True:
+#        print("CW on")
+#        cw_mode(nrf24, rf_ch)
+#        time.sleep(5)
+#        print("CW off")
+#        cw_mode(nrf24, off=True)
+#        time.sleep(5)
+
+    if trx_mode in 't' or (trx_mode in 'x' and sys.platform in 'darwin'):  # MacBook Pro
+        ptx_mode(nrf24, rf_ch)
     else:  # Raspberry Pi or MicroPython
-        prx_mode(nrf24, rf_ch, payload_size)
+        prx_mode(nrf24, rf_ch)
 
 
-def prx_mode(nrf24, rf_ch, payload_size):
+# Carrier Detect more
+# def cd_mode(nrf24, rf_ch):
+#    pass
+
+
+# Constant Wave output mode
+def cw_mode(nrf24, rf_ch=127, off=False):
+    if off:
+        nrf24.trx_enable(False)
+        return
+
+    nrf24.write_reg(NRF24L01P.CONFIG, bytes([0b00000010]))  # PWR_UP
+    time.sleep(0.002)
+    nrf24.write_reg(NRF24L01P.RF_SETUP, bytes([NRF24L01P.CONT_WAVE | NRF24L01P.PLL_LOCK | NRF24L01P.RF_PWR * 3]))
+    nrf24.write_reg(NRF24L01P.RF_CH, bytes([rf_ch]))
+    nrf24.trx_enable()  # Enter 'Standby-II'
+
+
+def prx_mode(nrf24, rf_ch):
     print("Receiver mode")
 
-#    nrf24.setup(prim_rx=1, rf_ch=rf_ch, payload_size=payload_size)
-
-    ic(nrf24.read_reg(NRF24L01P.STATUS, 1))
-    ic(nrf24.read_reg(NRF24L01P.OBSERVE_TX, 1))
-    print_fifo_status(nrf24)
-    print("Configure 'all' registers")
-    nrf24.write_cmd(NRF24L01P.FLUSH_RX)
-    nrf24.write_cmd(NRF24L01P.FLUSH_TX)
-    nrf24.write_reg(NRF24L01P.STATUS, bytes([0b01110000]))  # Clear any pending interrupts
-    nrf24.write_reg(NRF24L01P.CONFIG, bytes([0b01111111]))  # PRX
-    nrf24.write_reg(NRF24L01P.EN_AA, bytes([0b00111111]))
-    nrf24.write_reg(NRF24L01P.EN_RXADDR, bytes([0b00000011]))
-    nrf24.write_reg(NRF24L01P.SETUP_AW, bytes([0b00000011]))
-    nrf24.write_reg(NRF24L01P.SETUP_RETR, bytes([0b00000011]))
-    nrf24.write_reg(NRF24L01P.RF_CH, bytes([2]))
-    nrf24.write_reg(NRF24L01P.RF_SETUP, bytes([0b00001110]))
-    ic(nrf24.read_reg(NRF24L01P.STATUS, 1))
-    ic(nrf24.read_reg(NRF24L01P.OBSERVE_TX, 1))
-    print_fifo_status(nrf24)
-    ic(nrf24.read_reg(NRF24L01P.RX_ADDR_P0, 5))
-    ic(nrf24.read_reg(NRF24L01P.TX_ADDR, 5))
-    ic(nrf24.read_reg(NRF24L01P.DYNPD, 1))
-    ic(nrf24.read_reg(NRF24L01P.FEATURE, 1))
-
-#    nrf24.power_up()  # Enter 'Standby-1'
-    nrf24.trx_enable()
+    nrf24.setup(rf_ch=rf_ch)
+    nrf24.rx_mode()
+    nrf24.power_up()  # Enter 'Standby-1'
 
     ic(nrf24.status())
-    ic(nrf24.read_reg(NRF24L01P.CONFIG, 1))
+    ic(nrf24.lost_pkg_count())
+    ic(nrf24.retransmit_count())
+    print_fifo_status(nrf24)
 
-    for i in range(5):
-        print_fifo_status(nrf24)
-        ic(nrf24.read_reg(NRF24L01P.RX_PW_P0, 1))
-        time.sleep(1)
+    while True:
+        status, fifo_status = nrf24.read_reg(NRF24L01P.FIFO_STATUS, 1)
+
+        if not (fifo_status[0] & NRF24L01P.RX_EMPTY):
+            rx_data, rx_p_no = nrf24.read_rx_data()
+            print(f"RX #{rx_p_no} Data: {rx_data}")
 
 
-def ptx_mode(nrf24, rf_ch, payload_size):
+def ptx_mode(nrf24, rf_ch):
     print("Transmitter mode")
 
-    nrf24.setup(prim_rx=0, rf_ch=rf_ch, payload_size=payload_size, arc=15)
-
-    ic(nrf24.read_reg(NRF24L01P.STATUS, 1))
-    ic(nrf24.read_reg(NRF24L01P.OBSERVE_TX, 1))
-    print_fifo_status(nrf24)
-    print("Configure 'all' registers")
-    nrf24.write_cmd(NRF24L01P.FLUSH_RX)
-    nrf24.write_cmd(NRF24L01P.FLUSH_TX)
-    nrf24.write_reg(NRF24L01P.STATUS, bytes([0b01110000]))  # Clear any pending interrupts
-    nrf24.write_reg(NRF24L01P.CONFIG, bytes([0b01111110]))  # TRX
-    nrf24.write_reg(NRF24L01P.EN_AA, bytes([0b00111111]))
-    nrf24.write_reg(NRF24L01P.EN_RXADDR, bytes([0b00000011]))
-    nrf24.write_reg(NRF24L01P.SETUP_AW, bytes([0b00000011]))
-    nrf24.write_reg(NRF24L01P.SETUP_RETR, bytes([0b00000011]))
-    nrf24.write_reg(NRF24L01P.RF_CH, bytes([2]))
-    nrf24.write_reg(NRF24L01P.RF_SETUP, bytes([0b00001110]))
-    ic(nrf24.read_reg(NRF24L01P.STATUS, 1))
-    ic(nrf24.read_reg(NRF24L01P.OBSERVE_TX, 1))
-    print_fifo_status(nrf24)
-    ic(nrf24.read_reg(NRF24L01P.RX_ADDR_P0, 5))
-    ic(nrf24.read_reg(NRF24L01P.TX_ADDR, 5))
-    ic(nrf24.read_reg(NRF24L01P.DYNPD, 1))
-    ic(nrf24.read_reg(NRF24L01P.FEATURE, 1))
-
-#    nrf24.power_up()  # Enter 'Standby-1'
+    nrf24.setup(rf_ch=rf_ch)
+    nrf24.tx_mode()
+    nrf24.power_up()  # Enter 'Standby-1'
 
     ic(nrf24.status())
-
+    ic(nrf24.lost_pkg_count())
+    ic(nrf24.retransmit_count())
     print_fifo_status(nrf24)
 
-    print("Write 32 byte #1")
-    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD, b'Hello World!  1 ')
+    print("Write 16 byte (1)")
+    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD, b'Hello World!0123')
     print_fifo_status(nrf24)
-#    print("Write 32 byte #2")
-#    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD_NO_ACK, b'12345678901234567890123456789012')
-#    print_fifo_status(nrf24)
-#    print("Write 32 byte #3")
-#    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD_NO_ACK, b'abcdefghijklmnopqrstuvwxyz')
-#    print_fifo_status(nrf24)
 
-    ic(nrf24.observe_tx())
+    nrf24.trx_enable()  # Enter 'TX Mode'
+    time.sleep(15e-6)  # Wait >10 us
+    nrf24.trx_disable()  # Enter 'Standby-I'
 
-    nrf24.trx_enable()  # Enter 'Standby-II'
-    time.sleep(1)
+    time.sleep(0.1)
+
     print_fifo_status(nrf24)
-    ic(nrf24.observe_tx())
+    ic(nrf24.lost_pkg_count())
+    ic(nrf24.retransmit_count())
+
+    print("Write 7 byte (2)")
+    nrf24.write_cmd(NRF24L01P.W_TX_PAYLOAD, b'Hi all!')
+    print_fifo_status(nrf24)
+
+    nrf24.trx_enable()  # Enter 'TX Mode'
+    time.sleep(15e-6)  # Wait >10 us
+    nrf24.trx_disable()  # Enter 'Standby-I'
+
+    print_fifo_status(nrf24)
+    ic(nrf24.lost_pkg_count())
+    ic(nrf24.retransmit_count())
 
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) == 1:
+        trx = 'x'
+    else:
+        trx = sys.argv[1]
+    main(trx)
