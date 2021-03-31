@@ -1,4 +1,4 @@
-from icecream import ic
+# from icecream import ic
 
 
 class NRF24L01P:
@@ -12,12 +12,6 @@ class NRF24L01P:
     DR_250KBPS = 1 << 5 | 0 << 3
     DR_1MBPS = 0 << 5 | 0 << 3
     DR_2MBPS = 0 << 5 | 1 << 3
-
-    # CRC
-    CRC_DISABLED = 0x0
-    CRC_8 = 0x02
-    CRC_16 = 0x04
-    CRC_ENABLED = 0x08
 
     # Registers
     CONFIG = 0x00
@@ -91,6 +85,11 @@ class NRF24L01P:
     RX_P_NO = 1 << 1
 #    TX_FULL = 1 << 0
 
+    # SETUP_AW register bits
+    AW3 = 1 << 0
+    AW4 = 2 << 0
+    AW5 = 3 << 0
+
     # OBSERVE_TX register bits
     PLOS_CNT = 1 << 4
     ARC_CNT = 1 << 0
@@ -111,8 +110,8 @@ class NRF24L01P:
     DPL_P0 = 1 << 0
 
     # FEATURE register bits
-    EN_DPL = 1 << 3
-    EN_ACK_PAY = 1 << 2
+    EN_DPL = 1 << 2
+    EN_ACK_PAY = 1 << 1
     EN_DYN_ACK = 1 << 0
 
     # Instruction Mnemonics
@@ -129,78 +128,146 @@ class NRF24L01P:
     NOP = 0xFF
 
     def __init__(self, spi_transfer, ce_pin):
+        """Initialize NRF24L01P (HW) object"""
         self._spi_transfer = spi_transfer
         self._ce_pin = ce_pin
-        self.payload_size = 16
         self.prim_rx = 0
+        # Flush FIFOs, clear any pending interrupts and Power Down
         self.write_cmd(NRF24L01P.FLUSH_RX)
         self.write_cmd(NRF24L01P.FLUSH_TX)
-        self.trx_enable(False)
+        self.write_reg(NRF24L01P.STATUS, bytes([NRF24L01P.RX_DR | NRF24L01P.TX_DS | NRF24L01P.MAX_RT]))
+        self.trx_disable()
+        status, config = self.read_reg(NRF24L01P.CONFIG, 1)
+        self.write_reg(NRF24L01P.CONFIG, bytes([config[0] & ~NRF24L01P.PWR_UP]))
 
     def read_cmd(self, cmd, length):
+        """Read Command and return NRF24L01P status (int), command data (bytes)"""
         response = self._spi_transfer(bytes([cmd]) + bytes(length))
-        return response
-
-    def write_cmd(self, cmd, data=None):
-        if data is None:
-            response = self._spi_transfer(bytes([cmd]))
+        if length == 0:
+            return response[0], b''
         else:
-            response = self._spi_transfer(bytes([cmd]) + data)
-        return bytes([response[0]])
+            return response[0], response[1:]
+
+    def write_cmd(self, cmd, data=b''):
+        """Write Command and return NRF24L01P status (int)"""
+        response = self._spi_transfer(bytes([cmd]) + data)
+        return response[0]
 
     def read_reg(self, reg, length):
+        """Read Register and return NRF24L01P status (int), register data (bytes)"""
         response = self._spi_transfer(bytes([NRF24L01P.R_REGISTER | reg]) + bytes(length))
-        return response
+        return response[0], response[1:]
 
     def write_reg(self, reg, data):
+        """Write Register and return NRF24L01P status (int)"""
         response = self._spi_transfer(bytes([NRF24L01P.W_REGISTER | reg]) + data)
-        return bytes([response[0]])
+        return response[0]
 
-    def setup(self, prim_rx, mask_rx_dr=0, mask_tx_ds=0, mask_max_rt=0, en_crc=1, crc0=0, aw=0x3, ard=0x0,
-              arc=0x3, rf_ch=2, rf_dr=DR_2MBPS, rf_pwr=PWR_MAX, payload_size=16):
-        assert payload_size <= 32, "Maximum payload size is 32"
-        self.payload_size = payload_size
-        self.prim_rx = prim_rx
-        response = self.read_reg(NRF24L01P.CONFIG, 1)
-        pwr_up = response[1] & NRF24L01P.PWR_UP
-        self.write_reg(NRF24L01P.CONFIG, bytes([mask_rx_dr * NRF24L01P.MASK_RX_DR |
-                                                mask_tx_ds * NRF24L01P.MASK_TX_DS |
-                                                mask_max_rt * NRF24L01P.MASK_MAX_RT |
-                                                en_crc * NRF24L01P.EN_CRC |
-                                                crc0 * NRF24L01P.CRC_8 |
-                                                pwr_up |
-                                                prim_rx * NRF24L01P.PRIM_RX]))
-        self.write_reg(NRF24L01P.SETUP_AW, bytes([aw]))
-        self.write_reg(NRF24L01P.RF_CH, bytes([rf_ch]))
+    def setup(self, mask_irq=0, rf_ch=2, rf_dr=DR_2MBPS, rf_pwr=PWR_MAX, erx=ERX_P0 | ERX_P1,
+              rx_addr_p0=b'\xE7\xE7\xE7\xE7\xE7', rx_addr_p1=b'\xC2\xC2\xC2\xC2\xC2', rx_addr_p2=b'\xC3',
+              rx_addr_p3=b'\xC4', rx_addr_p4=b'\xC5', rx_addr_p5=b'\xC6', tx_addr=b'\xE7\xE7\xE7\xE7\xE7'):
+        """Setup NRF24L01P. Should be run first.
+        Configuration:
+          2 byte CRC
+          5 byte address
+          250 us resend wait time
+          15 resend retries
+          Auto acknowledge (on all pipes)
+          Dynamic Payload Length (on all pipes)
+        """
+        self.write_reg(NRF24L01P.CONFIG, bytes([mask_irq | NRF24L01P.EN_CRC | NRF24L01P.CRC0]))
+        self.write_reg(NRF24L01P.EN_AA, bytes([NRF24L01P.ENAA_P0 | NRF24L01P.ENAA_P1 | NRF24L01P.ENAA_P2 |
+                                               NRF24L01P.ENAA_P3 | NRF24L01P.ENAA_P4 | NRF24L01P.ENAA_P5]))
+        self.write_reg(NRF24L01P.SETUP_AW, bytes([NRF24L01P.AW5]))
+        self.rf_channel(rf_ch)
         self.write_reg(NRF24L01P.RF_SETUP, bytes([rf_dr | rf_pwr * NRF24L01P.RF_PWR]))
-        self.write_reg(NRF24L01P.SETUP_RETR, bytes([ard * NRF24L01P.ARD | arc * NRF24L01P.ARC]))
+        self.write_reg(NRF24L01P.SETUP_RETR, bytes([0x0F]))  # Wait 250 ua, 15 retries
+        self.write_reg(NRF24L01P.FEATURE, bytes([NRF24L01P.EN_DPL]))
+        self.write_reg(NRF24L01P.DYNPD, bytes([NRF24L01P.DPL_P0 | NRF24L01P.DPL_P1 | NRF24L01P.DPL_P2 |
+                                               NRF24L01P.DPL_P3 | NRF24L01P.DPL_P4 | NRF24L01P.DPL_P5]))
+        self.write_reg(NRF24L01P.RX_ADDR_P0, rx_addr_p0)
+        self.write_reg(NRF24L01P.RX_ADDR_P1, rx_addr_p1)
+        self.write_reg(NRF24L01P.RX_ADDR_P2, rx_addr_p2)
+        self.write_reg(NRF24L01P.RX_ADDR_P3, rx_addr_p3)
+        self.write_reg(NRF24L01P.RX_ADDR_P4, rx_addr_p4)
+        self.write_reg(NRF24L01P.RX_ADDR_P5, rx_addr_p5)
+        self.write_reg(NRF24L01P.EN_RXADDR, bytes([erx]))
+        self.write_reg(NRF24L01P.TX_ADDR, tx_addr)
 
-    def trx_enable(self, enable=True):
-        if enable:
-            self._ce_pin(1)
-        else:
-            self._ce_pin(0)
+    def rf_channel(self, rf_ch):
+        """Set RF channel (0-127)"""
+        assert rf_ch <= 127, "RF Channel out of range"
+        self.write_reg(NRF24L01P.RF_CH, bytes([rf_ch]))
 
-    def power_up(self, pwr_up=True):
-        response = self.read_reg(NRF24L01P.CONFIG, 1)
-        if pwr_up:
-            data = response[1] | NRF24L01P.PWR_UP
-        else:
-            data = response[1] & ~NRF24L01P.PWR_UP
-        self.write_reg(NRF24L01P.CONFIG, bytes([data]))
+    def rx_mode(self):
+        """Set RX Mode"""
+        self.prim_rx = 1
+        status, config = self.read_reg(NRF24L01P.CONFIG, 1)
+        self.write_reg(NRF24L01P.CONFIG, bytes([config[0] | NRF24L01P.PRIM_RX]))
+
+    def tx_mode(self):
+        """Set TX Mode"""
+        self.prim_rx = 0
+        status, config = self.read_reg(NRF24L01P.CONFIG, 1)
+        self.write_reg(NRF24L01P.CONFIG, bytes([config[0] & ~NRF24L01P.PRIM_RX]))
+
+    def trx_enable(self):
+        """Enable RX/TX Mode"""
+        self._ce_pin(1)
+
+    def trx_disable(self):
+        """Disable RX/TX Mode"""
+        self._ce_pin(0)
+
+    def power_up(self,):
+        """Power Up device (go to Standby-I state)"""
+        status, config = self.read_reg(NRF24L01P.CONFIG, 1)
+        self.write_reg(NRF24L01P.CONFIG, bytes([config[0] | NRF24L01P.PWR_UP]))
+
+    def power_down(self):
+        """Power Down device (go to Power Down state)"""
+        status, config = self.read_reg(NRF24L01P.CONFIG, 1)
+        self.write_reg(NRF24L01P.CONFIG, bytes([config[0] & ~NRF24L01P.PWR_UP]))
 
     def tx_addr(self, addr):
+        """Set TX Address"""
         self.write_reg(NRF24L01P.TX_ADDR, addr)
 
     def status(self):
-        response = self.read_cmd(NRF24L01P.NOP, 0)
-        return response
+        """NRF24L01P status returns current status (int)"""
+        return self.read_cmd(NRF24L01P.NOP, 0)[0]
 
-    def observe_tx(self):
-        response = self.read_reg(NRF24L01P.OBSERVE_TX, 1)
-        arc_cnt = response[1] & 0x0F
-        plos_cnt = (response[1] & 0xF0) >> 4
-        return arc_cnt, plos_cnt
+    def lost_pkg_count(self):
+        """Lost Packet Count, returns number of packets that has been lost since previous call"""
+        status, observe_tx = self.read_reg(NRF24L01P.OBSERVE_TX, 1)
+        plos_cnt = (observe_tx[0] & 0xF0) >> 4
+        status, rf_ch = self.read_reg(NRF24L01P.RF_CH, 1)
+        self.write_reg(NRF24L01P.RF_CH, rf_ch)  # Clear PLOS_CNT
+        return plos_cnt
 
-    def send_data(self, data):
-        pass
+    def retransmit_count(self):
+        """Retransmit Count, returns number of retransmissions (saturates at 15)"""
+        status, observe_tx = self.read_reg(NRF24L01P.OBSERVE_TX, 1)
+        arc_cnt = observe_tx[0] & 0x0F
+        self.write_reg(NRF24L01P.STATUS, bytes([NRF24L01P.MAX_RT]))  # Clear MAX_RT interrupt (if any)
+        return arc_cnt
+
+    def write_tx_data(self, data):
+        """Write Data to TX FIFO, returns False if TX_FIFO is full, otherwise it returns True"""
+        assert len(data) <= 32, "Data length is out of range"
+
+        if self.status() & 0x01:
+            return False  # TX FIFO full
+
+        self.write_cmd(NRF24L01P.W_TX_PAYLOAD, data)
+        return True
+
+    def read_rx_data(self):
+        """Read Data from RX FIFO, returns RX Data and Pipe number"""
+        status, rx_pl_wid = self.read_cmd(NRF24L01P.R_RX_PL_WID, 1)
+        rx_p_no = (status >> 1) & 0x07
+        if rx_p_no == 0x7:
+            rx_data = None
+        else:
+            status, rx_data = self.read_cmd(NRF24L01P.R_RX_PAYLOAD, rx_pl_wid)
+        return rx_data, rx_p_no
