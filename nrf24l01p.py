@@ -127,9 +127,9 @@ class NRF24L01P:
     W_TX_PAYLOAD_NO_ACK = 0xB0
     NOP = 0xFF
 
-    def __init__(self, spi_transfer, ce_pin):
+    def __init__(self, spi, ce_pin):
         """Initialize NRF24L01P (HW) object"""
-        self._spi_transfer = spi_transfer
+        self._spi = spi
         self._ce_pin = ce_pin
         self.prim_rx = 0
         # Flush FIFOs, clear any pending interrupts and Power Down
@@ -142,7 +142,7 @@ class NRF24L01P:
 
     def read_cmd(self, cmd, length):
         """Read Command and return NRF24L01P status (int), command data (bytes)"""
-        response = self._spi_transfer(bytes([cmd]) + bytes(length))
+        response = self._spi.transfer(bytes([cmd]) + bytes(length))
         if length == 0:
             return response[0], b''
         else:
@@ -150,17 +150,17 @@ class NRF24L01P:
 
     def write_cmd(self, cmd, data=b''):
         """Write Command and return NRF24L01P status (int)"""
-        response = self._spi_transfer(bytes([cmd]) + data)
+        response = self._spi.transfer(bytes([cmd]) + data)
         return response[0]
 
     def read_reg(self, reg, length):
         """Read Register and return NRF24L01P status (int), register data (bytes)"""
-        response = self._spi_transfer(bytes([NRF24L01P.R_REGISTER | reg]) + bytes(length))
+        response = self._spi.transfer(bytes([NRF24L01P.R_REGISTER | reg]) + bytes(length))
         return response[0], response[1:]
 
     def write_reg(self, reg, data):
         """Write Register and return NRF24L01P status (int)"""
-        response = self._spi_transfer(bytes([NRF24L01P.W_REGISTER | reg]) + data)
+        response = self._spi.transfer(bytes([NRF24L01P.W_REGISTER | reg]) + data)
         return response[0]
 
     def setup(self, mask_irq=0, rf_ch=2, rf_dr=DR_2MBPS, rf_pwr=PWR_MAX, erx=ERX_P0 | ERX_P1,
@@ -213,11 +213,11 @@ class NRF24L01P:
 
     def trx_enable(self):
         """Enable RX/TX Mode"""
-        self._ce_pin(1)
+        self._ce_pin.output(1)
 
     def trx_disable(self):
         """Disable RX/TX Mode"""
-        self._ce_pin(0)
+        self._ce_pin.output(0)
 
     def power_up(self,):
         """Power Up device (go to Standby-I state)"""
@@ -271,3 +271,18 @@ class NRF24L01P:
         else:
             status, rx_data = self.read_cmd(NRF24L01P.R_RX_PAYLOAD, rx_pl_wid[0])
         return rx_data, rx_p_no
+
+    def fifo_status_string(self):
+        status, response = self.read_reg(NRF24L01P.FIFO_STATUS, 1)
+        status_str = ""
+        if response[0] & 1 << 6:
+            status_str += "TX_REUSE,"
+        if response[0] & 1 << 5:
+            status_str += "TX_FULL,"
+        if response[0] & 1 << 4:
+            status_str += "TX_EMPTY,"
+        if response[0] & 1 << 1:
+            status_str += "RX_FULL,"
+        if response[0] & 1 << 0:
+            status_str += "RX_EMPTY,"
+        return status_str
