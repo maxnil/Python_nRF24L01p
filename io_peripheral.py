@@ -110,7 +110,7 @@ class Pin:
 
     def __del__(self):
         """Cleanup function"""
-        if self.pin_type == 'spidev':
+        if self.pin_type == 'rpi':
             self._gpio.cleanup()
 
     def output(self, set_value):
