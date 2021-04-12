@@ -1,5 +1,5 @@
 from icecream import ic
-from io_peripheral import Pin, SPI
+from machine_rpi import Pin, SPI
 from nrf24l01p import NRF24L01P
 import time
 

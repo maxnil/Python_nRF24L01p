@@ -127,9 +127,10 @@ class NRF24L01P:
     W_TX_PAYLOAD_NO_ACK = 0xB0
     NOP = 0xFF
 
-    def __init__(self, spi, cs_pin, ce_pin):
+    def __init__(self, spi, ce_pin, cs_pin=None):
         """Initialize NRF24L01P (HW) object"""
         self._spi = spi
+
         self._cs_pin = cs_pin
         self._ce_pin = ce_pin
         self.prim_rx = 0
@@ -143,9 +144,11 @@ class NRF24L01P:
 
     def read_cmd(self, cmd, length=1):
         """Read Command and return NRF24L01P status (int), command data (bytes)"""
-        self._cs_pin.low()
+        if self._cs_pin is not None:
+            self._cs_pin.low()
         response = self._spi.read(length+1, cmd)
-        self._cs_pin.high()
+        if self._cs_pin is not None:
+            self._cs_pin.high()
         if length == 0:
             return response[0], b''
         else:
@@ -154,16 +157,20 @@ class NRF24L01P:
     def write_cmd(self, cmd, data=b''):
         """Write Command and return NRF24L01P status (int)"""
         read_buf = bytearray(1 + len(data))
-        self._cs_pin.low()
+        if self._cs_pin is not None:
+            self._cs_pin.low()
         self._spi.write_readinto(bytes([cmd]) + data, read_buf)
-        self._cs_pin.high()
+        if self._cs_pin is not None:
+            self._cs_pin.high()
         return read_buf[0]
 
     def read_reg(self, reg, length=1):
         """Read Register and return NRF24L01P status (int), register data (bytes)"""
-        self._cs_pin.low()
+        if self._cs_pin is not None:
+            self._cs_pin.low()
         response = self._spi.read(length+1, NRF24L01P.R_REGISTER | reg)
-        self._cs_pin.high()
+        if self._cs_pin is not None:
+            self._cs_pin.high()
         if length == 0:
             return response[0], b''
         else:
@@ -172,9 +179,11 @@ class NRF24L01P:
     def write_reg(self, reg, data):
         """Write Register and return NRF24L01P status (int)"""
         read_buf = bytearray(1 + len(data))
-        self._cs_pin.low()
+        if self._cs_pin is not None:
+            self._cs_pin.low()
         self._spi.write_readinto(bytes([NRF24L01P.W_REGISTER | reg]) + data, read_buf)
-        self._cs_pin.high()
+        if self._cs_pin is not None:
+            self._cs_pin.high()
         return bytes(read_buf[0])
 
     def setup(self, mask_irq=0, rf_ch=2, rf_dr=DR_2MBPS, rf_pwr=PWR_MAX, erx=ERX_P0 | ERX_P1,
