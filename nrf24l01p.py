@@ -127,9 +127,10 @@ class NRF24L01P:
     W_TX_PAYLOAD_NO_ACK = 0xB0
     NOP = 0xFF
 
-    def __init__(self, spi, ce_pin):
+    def __init__(self, spi, cs_pin, ce_pin):
         """Initialize NRF24L01P (HW) object"""
         self._spi = spi
+        self._cs_pin = cs_pin
         self._ce_pin = ce_pin
         self.prim_rx = 0
         # Flush FIFOs, clear any pending interrupts and Power Down
@@ -140,28 +141,41 @@ class NRF24L01P:
         status, config = self.read_reg(NRF24L01P.CONFIG, 1)
         self.write_reg(NRF24L01P.CONFIG, bytes([config[0] & ~NRF24L01P.PWR_UP]))
 
-    def read_cmd(self, cmd, length):
+    def read_cmd(self, cmd, length=1):
         """Read Command and return NRF24L01P status (int), command data (bytes)"""
-        response = self._spi.transfer(bytes([cmd]) + bytes(length))
+        self._cs_pin.low()
+        response = self._spi.read(length+1, cmd)
+        self._cs_pin.high()
         if length == 0:
             return response[0], b''
         else:
-            return response[0], response[1:]
+            return response[0], bytes(response[1:])
 
     def write_cmd(self, cmd, data=b''):
         """Write Command and return NRF24L01P status (int)"""
-        response = self._spi.transfer(bytes([cmd]) + data)
-        return response[0]
+        read_buf = bytearray(1 + len(data))
+        self._cs_pin.low()
+        self._spi.write_readinto(bytes([cmd]) + data, read_buf)
+        self._cs_pin.high()
+        return read_buf[0]
 
-    def read_reg(self, reg, length):
+    def read_reg(self, reg, length=1):
         """Read Register and return NRF24L01P status (int), register data (bytes)"""
-        response = self._spi.transfer(bytes([NRF24L01P.R_REGISTER | reg]) + bytes(length))
-        return response[0], response[1:]
+        self._cs_pin.low()
+        response = self._spi.read(length+1, NRF24L01P.R_REGISTER | reg)
+        self._cs_pin.high()
+        if length == 0:
+            return response[0], b''
+        else:
+            return response[0], bytes(response[1:])
 
     def write_reg(self, reg, data):
         """Write Register and return NRF24L01P status (int)"""
-        response = self._spi.transfer(bytes([NRF24L01P.W_REGISTER | reg]) + data)
-        return response[0]
+        read_buf = bytearray(1 + len(data))
+        self._cs_pin.low()
+        self._spi.write_readinto(bytes([NRF24L01P.W_REGISTER | reg]) + data, read_buf)
+        self._cs_pin.high()
+        return bytes(read_buf[0])
 
     def setup(self, mask_irq=0, rf_ch=2, rf_dr=DR_2MBPS, rf_pwr=PWR_MAX, erx=ERX_P0 | ERX_P1,
               rx_addr_p0=b'\xE7\xE7\xE7\xE7\xE7', rx_addr_p1=b'\xC2\xC2\xC2\xC2\xC2', rx_addr_p2=b'\xC3',
@@ -182,7 +196,7 @@ class NRF24L01P:
         self.rf_channel(rf_ch)
         self.write_reg(NRF24L01P.RF_SETUP, bytes([rf_dr | rf_pwr * NRF24L01P.RF_PWR]))
         self.write_reg(NRF24L01P.SETUP_RETR, bytes([0x0F]))  # Wait 250 ua, 15 retries
-        self.write_reg(NRF24L01P.FEATURE, bytes([NRF24L01P.EN_DPL]))
+        self.write_reg(NRF24L01P.FEATURE, bytes([NRF24L01P.EN_DPL | NRF24L01P.EN_DYN_ACK]))
         self.write_reg(NRF24L01P.DYNPD, bytes([NRF24L01P.DPL_P0 | NRF24L01P.DPL_P1 | NRF24L01P.DPL_P2 |
                                                NRF24L01P.DPL_P3 | NRF24L01P.DPL_P4 | NRF24L01P.DPL_P5]))
         self.write_reg(NRF24L01P.RX_ADDR_P0, rx_addr_p0)
@@ -213,11 +227,11 @@ class NRF24L01P:
 
     def trx_enable(self):
         """Enable RX/TX Mode"""
-        self._ce_pin.output(1)
+        self._ce_pin.high()
 
     def trx_disable(self):
         """Disable RX/TX Mode"""
-        self._ce_pin.output(0)
+        self._ce_pin.low()
 
     def power_up(self,):
         """Power Up device (go to Standby-I state)"""
