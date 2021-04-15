@@ -5,9 +5,9 @@ import RPi.GPIO as GPIO
 
 class SPI:
     """SPI class that mimics MicroPython SPI class using a SPIDriver USB Dongle"""
-    def __init__(self, spi_id=0, baudrate=1000000, polarity=0, phase=0):
+    def __init__(self, id=0, baudrate=1000000, polarity=0, phase=0):
         self._spidev = SpiDev()
-        self._spidev.open(spi_id, 0)
+        self._spidev.open(id, 0)
         self._spidev.max_speed_hz = baudrate
         self._spidev.mode = polarity << 1 | phase
 
@@ -30,16 +30,18 @@ class Pin:
     OUT = 1
 
     def __init__(self, id, mode=-1, pull=-1):
-        self._gpio = GPIO
-        self._gpio.setmode(GPIO.BCM)
-        self._gpio.setup(id, GPIO.OUT if mode == Pin.IN else GPIO.IN)
         self._pin_id = id
+        if id is not None:
+            self._gpio = GPIO
+            self._gpio.setmode(GPIO.BCM)
+            self._gpio.setup(id, GPIO.OUT if mode == Pin.IN else GPIO.IN)
 
     def value(self, x=None):
-        if x is None:
-            return self._gpio.input(self._pin_id)
-        else:
-            self._gpio.output(x)
+        if self._pin_id is not None:
+            if x is None:
+                return self._gpio.input(self._pin_id)
+            else:
+                self._gpio.output(x)
 
     def __call__(self, x=None):
         self.value(x)

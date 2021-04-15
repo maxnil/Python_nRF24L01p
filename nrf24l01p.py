@@ -3,10 +3,10 @@
 
 class NRF24L01P:
     # RF output power levels
-    PWR_MIN = 0x0
-    PWR_LOW = 0x1
-    PWR_HIGH = 0x2
-    PWR_MAX = 0x3
+    PWR_MIN = 0x0 << 1
+    PWR_LOW = 0x1 << 1
+    PWR_HIGH = 0x2 << 1
+    PWR_MAX = 0x3 << 1
 
     # Data rates
     DR_250KBPS = 1 << 5 | 0 << 3
@@ -127,7 +127,7 @@ class NRF24L01P:
     W_TX_PAYLOAD_NO_ACK = 0xB0
     NOP = 0xFF
 
-    def __init__(self, spi, ce_pin, cs_pin=None):
+    def __init__(self, *, spi, cs_pin, ce_pin):
         """Initialize NRF24L01P (HW) object"""
         self._spi = spi
 
@@ -203,7 +203,7 @@ class NRF24L01P:
                                                NRF24L01P.ENAA_P3 | NRF24L01P.ENAA_P4 | NRF24L01P.ENAA_P5]))
         self.write_reg(NRF24L01P.SETUP_AW, bytes([NRF24L01P.AW5]))
         self.rf_channel(rf_ch)
-        self.write_reg(NRF24L01P.RF_SETUP, bytes([rf_dr | rf_pwr * NRF24L01P.RF_PWR]))
+        self.write_reg(NRF24L01P.RF_SETUP, bytes([rf_dr | rf_pwr]))
         self.write_reg(NRF24L01P.SETUP_RETR, bytes([0x0F]))  # Wait 250 ua, 15 retries
         self.write_reg(NRF24L01P.FEATURE, bytes([NRF24L01P.EN_DPL | NRF24L01P.EN_DYN_ACK]))
         self.write_reg(NRF24L01P.DYNPD, bytes([NRF24L01P.DPL_P0 | NRF24L01P.DPL_P1 | NRF24L01P.DPL_P2 |
@@ -221,6 +221,16 @@ class NRF24L01P:
         """Set RF channel (0-127)"""
         assert rf_ch <= 127, "RF Channel out of range"
         self.write_reg(NRF24L01P.RF_CH, bytes([rf_ch]))
+
+    def data_rate(self, dr):
+        status, rf_setup = self.read_reg(NRF24L01P.RF_SETUP, 1)
+        rf_setup = rf_setup[0] & ~0b00101000
+        self.write_reg(NRF24L01P.RF_SETUP, bytes([rf_setup | dr]))
+
+    def tx_power(self, power):
+        status, rf_setup = self.read_reg(NRF24L01P.RF_SETUP, 1)
+        rf_setup = rf_setup[0] & ~0b00000110
+        self.write_reg(NRF24L01P.RF_SETUP, bytes([rf_setup | power]))
 
     def rx_mode(self):
         """Set RX Mode"""
